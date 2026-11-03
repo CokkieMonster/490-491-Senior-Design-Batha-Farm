@@ -1,0 +1,14 @@
+{
+  "name": "greenhouse-ptz-simulator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hikvision PTZ camera simulator and synthetic YOLO dataset generator for the 490 Gardening Project greenhouses",
+  "scripts": {
+    "build": "python build.py",
+    "check": "python tests/render_check.py"
+  },
+  "dependencies": {
+    "jszip": "3.10.1",
+    "three": "0.160.0"
+  }
+}

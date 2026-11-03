@@ -1,0 +1,7 @@
+# versions used for the 28 Oct 2026 run (CPU only)
+ultralytics==8.4.191
+torch==2.15.0
+torchvision==0.29.2
+openai-clip==1.0.1   # needed by YOLOE text prompts
+pillow
+numpy

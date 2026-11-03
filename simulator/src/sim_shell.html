@@ -1,0 +1,279 @@
+<title>Greenhouse PTZ Camera Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+/* Layout: instrument panel. Controls rail on the left, three live views on a shared WebGL stage, readouts below. */
+:root{
+  --bg:#eceee8; --panel:#f7f8f4; --raised:#ffffff; --ink:#1b241e; --muted:#5a675e; --line:#cdd5cb;
+  --accent:#c2412a; --leaf:#3b7a3a; --ok:#2c8148; --warn:#b5730c; --bad:#b73627; --hatch:#e3e7df;
+  --f-ui:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#111512; --panel:#191e1a; --raised:#20261f; --ink:#e2e8df; --muted:#97a398; --line:#2e3730;
+  --accent:#e8664c; --leaf:#7fc06f; --ok:#5cc07c; --warn:#e3a33c; --bad:#ef6a55; --hatch:#232a24; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#111512; --panel:#191e1a; --raised:#20261f; --ink:#e2e8df; --muted:#97a398; --line:#2e3730;
+  --accent:#e8664c; --leaf:#7fc06f; --ok:#5cc07c; --warn:#e3a33c; --bad:#ef6a55; --hatch:#232a24; color-scheme:dark }
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
+.app{max-width:1520px;margin:0 auto;display:grid;grid-template-columns:292px minmax(0,1fr);gap:16px 18px;
+  padding-block:14px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 22px;border-bottom:1px solid var(--line);padding-bottom:10px}
+header.top h1{font-family:var(--f-ui);font-weight:700;font-size:26px;letter-spacing:.01em;margin:0;line-height:1.05;text-wrap:balance}
+header.top .sub{color:var(--muted);font-size:13px;max-width:62ch}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.seg button{font-family:var(--f-ui);font-weight:600;font-size:14px;letter-spacing:.02em;padding:6px 12px;border:0;background:transparent;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.head-right{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+aside.controls{display:flex;flex-direction:column;gap:14px;min-width:0}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:9px}
+.box h2{font-family:var(--f-ui);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0}
+.ctl{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:baseline}
+.ctl label{font-size:13px}
+.ctl output{font-family:var(--f-num);font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums}
+.ctl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);margin:2px 0 0}
+.ctl .hint{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips button,.btn{font-family:var(--f-num);font-size:11.5px;padding:3px 7px;border:1px solid var(--line);background:var(--raised);color:var(--ink);border-radius:4px;cursor:pointer}
+.chips button:hover,.btn:hover{border-color:var(--accent)}
+select{font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--raised);color:var(--ink);width:100%}
+.check{display:flex;gap:7px;align-items:center;font-size:13px}
+.check input{accent-color:var(--accent)}
+.locked{font-size:12px;color:var(--muted);border-left:3px solid var(--line);padding-left:8px}
+.presetlist{display:flex;flex-direction:column;gap:4px}
+.presetlist button{text-align:left;font-family:var(--f-body);font-size:13px;padding:6px 8px;border:1px solid var(--line);background:var(--raised);color:var(--ink);border-radius:4px;cursor:pointer;line-height:1.25}
+.presetlist button small{display:block;color:var(--muted);font-size:11.5px}
+.presetlist button:hover{border-color:var(--accent)}
+main{min-width:0;display:flex;flex-direction:column;gap:14px}
+#stage{position:relative;display:flex;flex-direction:column;gap:12px}
+#gl{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:0;display:block}
+.panel{position:relative;z-index:1;border:1px solid var(--line);border-radius:3px;min-width:0}
+.ph{background:var(--panel);display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;padding:6px 10px;border-bottom:1px solid var(--line)}
+.ph b{font-family:var(--f-ui);font-size:15px;font-weight:700;letter-spacing:.02em}
+.ph span{font-family:var(--f-num);font-size:11.5px;color:var(--muted)}
+.ph .check{margin-left:auto;font-size:12.5px}
+.vp{position:relative;aspect-ratio:16/9;max-width:100%;cursor:grab;touch-action:none}
+.vp:active{cursor:grabbing}
+#ovRaw{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.vp .tag{position:absolute;left:8px;bottom:8px;font-family:var(--f-num);font-size:11px;background:rgba(10,14,11,.62);color:#eef2ec;padding:2px 6px;border-radius:3px;pointer-events:none}
+.zoomb{position:absolute;right:8px;bottom:8px;display:flex;gap:4px}
+.zoomb button{width:28px;height:28px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(10,14,11,.55);color:#fff;font-size:16px;cursor:pointer}
+#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--f-ui);font-size:16px;color:var(--muted);z-index:2;background:var(--bg)}
+.read{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.m{background:var(--panel);box-shadow:1px 0 0 var(--line),0 1px 0 var(--line);padding:9px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.m .k{font-family:var(--f-ui);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.m .v{font-family:var(--f-num);font-size:19px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.2}
+.m .n{font-size:12px;color:var(--muted)}
+.m.hero{grid-column:span 2;flex-direction:row;align-items:center;gap:14px}
+.m.hero .v{font-size:40px;line-height:1}
+.pill{display:inline-block;font-family:var(--f-ui);font-weight:700;font-size:12.5px;letter-spacing:.05em;padding:2px 8px;border-radius:99px;color:#fff;background:var(--ok)}
+.pill.warn{background:var(--warn)} .pill.bad{background:var(--bad)}
+.duo{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;min-width:0}
+.card h3{font-family:var(--f-ui);font-size:15px;font-weight:700;margin:0 0 6px;letter-spacing:.02em}
+.card p{margin:4px 0;color:var(--muted);font-size:12.5px;max-width:70ch}
+table.fr{width:100%;border-collapse:collapse;font-size:13px}
+table.fr th{font-family:var(--f-ui);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:right;padding:4px 6px;border-bottom:1px solid var(--line)}
+table.fr th:first-child,table.fr td:first-child{text-align:left}
+table.fr td{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;padding:5px 6px;border-bottom:1px solid var(--line)}
+table.fr td:first-child{font-family:var(--f-body)}
+.bar{display:flex;height:10px;border-radius:2px;overflow:hidden;background:var(--hatch);margin-top:3px}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.sw-det{background:#36b25a}.sw-small{background:#e6a521}.sw-part{background:#4d8fe0}.sw-hid{background:#d9452f}
+svg.pin{width:100%;height:auto;display:block}
+svg.pin .sensor{stroke:var(--ink);stroke-width:4}
+svg.pin .lens{fill:none;stroke:var(--ink);stroke-width:1.5}
+svg.pin .blade{stroke:var(--ink);stroke-width:5;stroke-linecap:butt}
+svg.pin .wedge{fill:var(--accent);opacity:.13}
+svg.pin .ray{stroke:var(--accent);stroke-width:1.5}
+svg.pin .ray2{stroke:var(--leaf);stroke-width:1.5;stroke-dasharray:5 4}
+svg.pin .axis{stroke:var(--muted);stroke-width:1;stroke-dasharray:2 4}
+svg.pin text{font-family:var(--f-num);font-size:11.5px;fill:var(--ink)}
+svg.pin text.mut{fill:var(--muted)}
+svg.pin .dim{stroke:var(--muted);stroke-width:1}
+.notes{font-size:12.5px;color:var(--muted);columns:2 320px;column-gap:28px}
+.notes p{margin:0 0 7px;break-inside:avoid}
+.notes b{color:var(--ink);font-weight:600}
+.warnline{color:var(--bad);font-size:12px}
+@media (max-width:980px){ .app{grid-template-columns:minmax(0,1fr)} .duo{grid-template-columns:minmax(0,1fr)} }
+@media (max-width:640px){ .row2{grid-template-columns:minmax(0,1fr)} .m.hero{grid-column:span 1} .m.hero .v{font-size:32px} header.top h1{font-size:22px} }
+@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>Greenhouse PTZ Camera Simulator</h1>
+      <div class="sub">The Albatha farm rows and the two university arches (28 customer plots). Move the camera, change the lens and the season date, and see what the camera sees, how many pixels each fruit gets, and how many fruit the leaves hide.</div>
+    </div>
+    <div class="head-right">
+      <div class="seg" role="group" aria-label="Camera mode">
+        <button id="mHik" aria-pressed="true">Hikvision PTZ</button>
+        <button id="mFree" aria-pressed="false">Free lens</button>
+      </div>
+    </div>
+  </header>
+
+  <aside class="controls">
+    <section class="box">
+      <h2>Greenhouse</h2>
+      <select id="gh" aria-label="Greenhouse">
+        <option value="albatha">Albatha farm rows (40 m)</option>
+        <option value="uniFruit">University arch 1: fruit vegetables</option>
+        <option value="uniLeafy">University arch 2: leafy greens and herbs</option>
+      </select>
+      <div id="dayBox" hidden>
+        <div class="ctl"><label for="day">Season date</label><output id="dayO"></output><input type="range" id="day" min="0" max="216" step="1"></div>
+        <div class="chips"><button data-day="30">1 Dec</button><button data-day="75">15 Jan</button><button data-day="120">1 Mar</button><button data-day="165">15 Apr</button><button data-day="195">15 May</button></div>
+        <ul id="season" style="margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted)"></ul>
+      </div>
+    </section>
+    <section class="box">
+      <h2>Setups</h2>
+      <div class="presetlist" id="presets"></div>
+    </section>
+
+    <section class="box">
+      <h2>Aim</h2>
+      <div class="ctl"><label for="pan">Pan</label><output id="panO"></output><input type="range" id="pan" min="0" max="355" step="0.5"><span class="hint">0° looks along the row. Drag the camera image to aim.</span></div>
+      <div class="ctl"><label for="tilt">Tilt down</label><output id="tiltO"></output><input type="range" id="tilt" min="0" max="90" step="0.5"></div>
+    </section>
+
+    <section class="box">
+      <h2>Position</h2>
+      <div class="ctl"><label for="px">Along the row</label><output id="pxO"></output><input type="range" id="px" min="-1.3" max="41" step="0.05"></div>
+      <div class="ctl"><label for="pz">Across the greenhouse</label><output id="pzO"></output><input type="range" id="pz" min="-3.7" max="3.7" step="0.01"><span class="hint" id="pzHint"></span></div>
+      <div class="chips" id="lanes"></div>
+      <div class="ctl"><label for="ph">Height</label><output id="phO"></output><input type="range" id="ph" min="0.2" max="4.6" step="0.05"></div>
+    </section>
+
+    <section class="box" id="lensHik">
+      <h2>Lens · DS-2DE2A404IWG1-E</h2>
+      <div class="ctl"><label for="fh">Zoom</label><output id="fhO"></output><input type="range" id="fh" min="2.8" max="12" step="0.1"></div>
+      <div class="chips"><button data-fh="2.8">1× 2.8 mm</button><button data-fh="5.6">2×</button><button data-fh="8.4">3×</button><button data-fh="12">4× 12 mm</button></div>
+      <div class="locked" id="hikAp"></div>
+    </section>
+
+    <section class="box" id="lensFree" hidden>
+      <h2>Lens · free</h2>
+      <div class="ctl"><label for="ff">Focal length</label><output id="ffO"></output><input type="range" id="ff" min="0" max="1000" step="1"></div>
+      <div class="chips"><button data-ff="2.8">2.8</button><button data-ff="12">12</button><button data-ff="24">24</button><button data-ff="35">35</button><button data-ff="50">50</button><button data-ff="90">90</button><button data-ff="135">135 mm</button></div>
+      <div class="ctl"><label for="fn">Aperture</label><output id="fnO"></output><input type="range" id="fn" min="0" max="24" step="1"></div>
+      <div class="ctl"><label for="sen">Sensor</label><span></span>
+        <select id="sen" style="grid-column:1/-1">
+          <option value="s28">1/2.8″ (5.6 mm wide), like the Hikvision</option>
+          <option value="s18">1/1.8″ (7.2 mm wide)</option>
+          <option value="apsc">APS-C (23.5 mm wide)</option>
+          <option value="ff">Full frame (36 mm wide)</option>
+        </select></div>
+      <div class="ctl"><label for="fk">Barrel distortion</label><output id="fkO"></output><input type="range" id="fk" min="0" max="0.3" step="0.005"></div>
+      <label class="check"><input type="checkbox" id="lockExp"> Fixed exposure (small aperture = darker)</label>
+    </section>
+
+    <section class="box">
+      <h2>Focus</h2>
+      <label class="check"><input type="checkbox" id="af" checked> Autofocus on the centre</label>
+      <div class="ctl"><label for="fd">Focus distance</label><output id="fdO"></output><input type="range" id="fd" min="0" max="1000" step="1"></div>
+    </section>
+
+    <section class="box">
+      <h2>Test board</h2>
+      <label class="check"><input type="checkbox" id="bOn"> Show a board in front of the camera</label>
+      <select id="bImg" aria-label="Board picture">
+        <option value="check">Checkerboard (shows lens distortion)</option>
+        <option value="farm">Farm photo (tomato hedge)</option>
+        <option value="user">Your photo…</option>
+      </select>
+      <input type="file" id="bFile" accept="image/*" hidden>
+      <div class="ctl"><label for="bd">Distance</label><output id="bdO"></output><input type="range" id="bd" min="0.3" max="6" step="0.05"></div>
+      <div class="ctl"><label for="bw">Board width</label><output id="bwO"></output><input type="range" id="bw" min="0.2" max="3" step="0.05"></div>
+      <div class="ctl"><label for="ba">Board angle</label><output id="baO"></output><input type="range" id="ba" min="0" max="85" step="1"><span class="hint">Turns the board away like Meera's tilt test. The straightened view corrects it.</span></div>
+    </section>
+
+    <section class="box">
+      <h2>Display</h2>
+      <div class="ctl"><label for="q">Render size</label><span></span>
+        <select id="q" style="grid-column:1/-1">
+          <option value="1280">1280 × 720 (fast)</option>
+          <option value="1920">1920 × 1080</option>
+          <option value="2560">2560 × 1440 (full sensor)</option>
+        </select></div>
+      <label class="check"><input type="checkbox" id="tint" checked> Shade row areas under 20 px per tomato</label>
+      <label class="check"><input type="checkbox" id="grid" checked> 0.5 m grid on the straightened view</label>
+    </section>
+  </aside>
+
+  <main>
+    <div id="stage">
+      <canvas id="gl"></canvas>
+      <div id="loading">Planting the greenhouse…</div>
+      <section class="panel">
+        <div class="ph"><b>Camera image</b><span id="rawInfo"></span>
+          <label class="check"><input type="checkbox" id="mark"> Show labels</label></div>
+        <div class="vp" id="vpRaw"><canvas id="ovRaw"></canvas><div class="tag" id="rawTag"></div></div>
+      </section>
+      <div class="row2">
+        <section class="panel">
+          <div class="ph"><b>Straightened view</b><span id="corInfo"></span></div>
+          <div class="vp" id="vpCor" style="cursor:default"><div class="tag" id="corTag"></div></div>
+        </section>
+        <section class="panel">
+          <div class="ph"><b>Overview</b><span>drag to orbit · scroll to zoom</span></div>
+          <div class="vp" id="vpOv"><div class="zoomb"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button></div></div>
+        </section>
+      </div>
+    </div>
+
+    <section class="read" id="read">
+      <div class="m hero"><div><div class="k">Pixels across a 30 mm tomato</div><div class="v" id="rPx">–</div><div class="n" id="rPxN"></div></div><span class="pill" id="rPill">–</span></div>
+      <div class="m"><div class="k">Viewing angle to target</div><div class="v" id="rAng">–</div><div class="n" id="rAngN"></div></div>
+      <div class="m"><div class="k">Distance to target</div><div class="v" id="rDist">–</div><div class="n" id="rDistN"></div></div>
+      <div class="m"><div class="k">Angle of view</div><div class="v" id="rFov">–</div><div class="n" id="rFovN"></div></div>
+      <div class="m"><div class="k">Area covered on target</div><div class="v" id="rCov">–</div><div class="n" id="rCovN"></div></div>
+      <div class="m"><div class="k">Usable row length (≥ 20 px)</div><div class="v" id="rUse">–</div><div class="n" id="rUseN"></div></div>
+      <div class="m"><div class="k">Sharp from – to</div><div class="v" id="rDof">–</div><div class="n" id="rDofN"></div></div>
+      <div class="m"><div class="k">Edge distortion</div><div class="v" id="rDis">–</div><div class="n" id="rDisN"></div></div>
+    </section>
+
+    <div class="duo">
+      <section class="card">
+        <h3>Fruit in view</h3>
+        <p id="fruitScope" style="margin-top:-2px"></p>
+        <div style="overflow-x:auto"><table class="fr">
+          <thead><tr><th>Crop</th><th>In frame</th><th>Fully visible</th><th>Partly hidden</th><th>Hidden</th><th>Labelled</th><th>Detectable</th></tr></thead>
+          <tbody id="fruitBody"></tbody>
+        </table></div>
+        <div class="legend"><span><i class="sw-det"></i>Labelled, detectable</span><span><i class="sw-small"></i>Labelled, under 20 px or blurred</span><span><i class="sw-part"></i>Under 30% visible, no label</span><span><i class="sw-hid"></i>Hidden by leaves</span></div>
+        <p>Visibility is measured pixel by pixel: the fruit is rendered once with the leaves and once without, after the lens distortion. Fully visible means at least half its pixels reach the camera. Labelled uses the training-data rule: at least 30% visible and a box of 8 px or more, drawn around the visible part. Detectable also needs 20 px across and blur under a third of the fruit's width. Updates a moment after you move.</p>
+      </section>
+      <section class="card">
+        <h3>Pinhole model, seen from above</h3>
+        <div id="pin"></div>
+        <p id="pinCap"></p>
+      </section>
+    </div>
+
+    <section class="card">
+      <h3>How the numbers are worked out</h3>
+      <div class="notes">
+        <p><b>Hikvision mode</b> uses the DS-2DE2A404IWG1-E datasheet: 1/2.8″ sensor, 2560 × 1440, 2.8–12 mm, pan 0–355°, tilt 0–90°. The horizontal angle of view follows the datasheet (99.4° at 2.8 mm, 32.8° at 12 mm) and is interpolated in between. At the long end that angle works out to about 9.5 mm effective on this sensor, and the sim uses the effective value for blur and pixel maths.</p>
+        <p><b>Aperture.</b> The datasheet only gives F1.8 at the wide end. The sim assumes the lens closes to F2.8 at 12 mm and that the camera runs wide open, so in Hikvision mode the aperture follows the zoom.</p>
+        <p><b>Distortion.</b> The wide end has visible barrel distortion, modelled with a one-term division model and fitted so the frame edge matches the datasheet angle. It fades out towards 12 mm. The vertical angle comes out wider than the datasheet's 51.7°, because the datasheet's two angles don't fit one 16:9 lens.</p>
+        <p><b>Pixels per fruit</b> = effective focal length ÷ pixel size × 30 mm ÷ distance, counted on the full 2560 px sensor whatever the render size. 20 px is the rule of thumb for a detector to find a fruit.</p>
+        <p><b>Blur</b> uses the thin-lens circle of confusion plus diffraction at the chosen f-number. "Sharp" means blur under 2 sensor pixels.</p>
+        <p><b>University arches</b> are 40 × 8 m (corrected length) with 14 plots of 4.00 × 3.50 m, 1.00 m walkways between plots as in the email, a 1.00 m central walkway, and 3.00 m free at each end. The line layout inside each plot follows drawings GH-02 and GH-03 (24-10-2026). Fruit plots: line 1 round tomato (8 @ 0.50 m), line 2 cherry tomato (8 @ 0.50 m), line 3 coloured capsicum (10 @ 0.40 m), line 4 cucumber + zucchini (4 + 4 @ 0.50 m), lines 0.875 m apart. Leafy plots: baby kale, rocca and spinach bands 0.60 m wide, then rosemary, thyme and coriander. Plant growth, fruit set, ripening, picking and re-sowing follow the dates in the two production plans. The arch height (2.6 m at the side, 4.2 m at the ridge) is an assumption.</p>
+        <p><b>Dataset generator.</b> The same greenhouse runs in the separate generator file, which renders random camera shots with YOLO labels using exactly the label rule above.</p>
+        <p><b>Straightened view</b> projects every point of the row face (or board) back into the camera image, the same homography used to correct Meera's tilted photos. Far parts of the row stretch over few camera pixels, so they come out soft. That softness is the real cost of a steep angle.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
